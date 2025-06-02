@@ -1,0 +1,11 @@
+{
+  "name": "ytmusic-crossfade",
+  "version": "1.0.0",
+  "description": "YouTube Music Crossfade Chrome Extension",
+  "scripts": {
+    "convert-icons": "node convert-icons.js"
+  },
+  "dependencies": {
+    "sharp": "^0.32.1"
+  }
+} 

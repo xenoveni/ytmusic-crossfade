@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YouTube Music Crossfade</title>
+    <style>
+        body {
+            width: 320px;
+            padding: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            color: #333;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .status {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .slider {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #ddd;
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #1a73e8;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .value {
+            min-width: 40px;
+            text-align: right;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider-toggle {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider-toggle:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider-toggle {
+            background-color: #1a73e8;
+        }
+
+        input:checked + .slider-toggle:before {
+            transform: translateX(20px);
+        }
+
+        .button {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        .button:hover {
+            background: #1557b0;
+        }
+
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: #d93025;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">YouTube Music Crossfade</h1>
+            <div class="status" id="status">Checking tabs...</div>
+        </div>
+
+        <div class="control-group">
+            <div class="label">
+                <span>Enable Crossfade</span>
+                <label class="toggle">
+                    <input type="checkbox" id="enableToggle">
+                    <span class="slider-toggle"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="label">
+                <span>Fade Duration</span>
+                <span class="value" id="fadeDurationValue">15s</span>
+            </div>
+            <div class="slider-container">
+                <input type="range" class="slider" id="fadeDuration" min="5" max="30" value="15">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="label">
+                <span>Trigger Time</span>
+                <span class="value" id="triggerTimeValue">15s</span>
+            </div>
+            <div class="slider-container">
+                <input type="range" class="slider" id="triggerTime" min="10" max="30" value="15">
+            </div>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html> 
