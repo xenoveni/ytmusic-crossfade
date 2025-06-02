@@ -1,5 +1,26 @@
 # Changelog - YouTube Music Crossfade Extension
 
+## Latest Updates (June 2025)
+
+### UI/UX
+- Redesigned popup with a modern dark theme and rounded corners for a professional look.
+- Updated controls: 'Fade Duration' and 'Trigger Time' replaced with 'Fade Out Duration' and 'Fade In Duration'.
+- Improved slider styling and accessibility for dark mode.
+
+### Functionality
+- Robust selector updates for all YouTube Music player elements (play/pause, volume, time, progress bar, song title) to match the June 2025 DOM.
+- Song title extraction now uses the correct selector for the currently playing track, ensuring accurate display and crossfade logic.
+- Added fallback and logging for progress bar detection.
+- Improved content script initialization and error handling for SPA navigation and dynamic DOM changes.
+
+### Settings & State
+- Settings and popup logic updated to use new fade in/out duration options.
+- Backward compatibility for users with old settings.
+
+### General
+- Improved logging and debugging output for easier troubleshooting.
+- All code and UI changes tested and verified on the latest YouTube Music interface.
+
 ## Errors Encountered & Fixes Applied
 
 ### 1. Content Script Not Injected in Existing Tabs

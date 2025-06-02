@@ -134,8 +134,9 @@
         }
         console.log('Progress bar fallback used. All sliders:', allSliders.map(e => ({ id: e.id, outerHTML: e.outerHTML.slice(0, 200) })), 'Selected progressBar:', progressBar);
       }
-      // Song title: use the exact selector from the user's screenshot, with fallbacks
+      // Song title: use the correct selector for the player bar
       const songTitle =
+        document.querySelector('yt-formatted-string.title.style-scope.ytmusic-player-bar')?.textContent ||
         document.querySelector('span.title.style-scope.ytmusic-player-bar')?.textContent ||
         document.querySelector('.title.ytmusic-player-bar, .ytmusic-player-bar .title, .title')?.textContent;
       if (!timeDisplay || !progressBar) {

@@ -1,16 +1,16 @@
 // DOM Elements
 const statusElement = document.getElementById('status');
 const enableToggle = document.getElementById('enableToggle');
-const fadeDurationSlider = document.getElementById('fadeDuration');
-const fadeDurationValue = document.getElementById('fadeDurationValue');
-const triggerTimeSlider = document.getElementById('triggerTime');
-const triggerTimeValue = document.getElementById('triggerTimeValue');
+const fadeOutDurationSlider = document.getElementById('fadeOutDuration');
+const fadeOutDurationValue = document.getElementById('fadeOutDurationValue');
+const fadeInDurationSlider = document.getElementById('fadeInDuration');
+const fadeInDurationValue = document.getElementById('fadeInDurationValue');
 const errorElement = document.getElementById('error');
 
 // State
 let currentSettings = {
-    fadeDuration: 15,
-    triggerTime: 15,
+    fadeOutDuration: 15,
+    fadeInDuration: 15,
     isEnabled: false
 };
 
@@ -42,10 +42,10 @@ function hideError() {
 function updateSettingsDisplay(settings) {
     currentSettings = settings;
     enableToggle.checked = settings.isEnabled;
-    fadeDurationSlider.value = settings.fadeDuration;
-    fadeDurationValue.textContent = `${settings.fadeDuration}s`;
-    triggerTimeSlider.value = settings.triggerTime;
-    triggerTimeValue.textContent = `${settings.triggerTime}s`;
+    fadeOutDurationSlider.value = settings.fadeOutDuration;
+    fadeOutDurationValue.textContent = `${settings.fadeOutDuration}s`;
+    fadeInDurationSlider.value = settings.fadeInDuration;
+    fadeInDurationValue.textContent = `${settings.fadeInDuration}s`;
 }
 
 // Save settings
@@ -66,6 +66,11 @@ async function initializePopup() {
     try {
         const status = await chrome.runtime.sendMessage({ action: 'getStatus' });
         updateStatus(status);
+        // Backward compatibility: map old settings to new if needed
+        if (status.settings && (status.settings.fadeDuration !== undefined || status.settings.triggerTime !== undefined)) {
+            status.settings.fadeOutDuration = status.settings.fadeDuration ?? 15;
+            status.settings.fadeInDuration = status.settings.triggerTime ?? 15;
+        }
         updateSettingsDisplay(status.settings);
     } catch (error) {
         console.error('Error initializing popup:', error);
@@ -89,17 +94,17 @@ enableToggle.addEventListener('change', async (e) => {
     }
 });
 
-fadeDurationSlider.addEventListener('input', (e) => {
+fadeOutDurationSlider.addEventListener('input', (e) => {
     const value = parseInt(e.target.value);
-    fadeDurationValue.textContent = `${value}s`;
-    currentSettings.fadeDuration = value;
+    fadeOutDurationValue.textContent = `${value}s`;
+    currentSettings.fadeOutDuration = value;
     saveSettings(currentSettings);
 });
 
-triggerTimeSlider.addEventListener('input', (e) => {
+fadeInDurationSlider.addEventListener('input', (e) => {
     const value = parseInt(e.target.value);
-    triggerTimeValue.textContent = `${value}s`;
-    currentSettings.triggerTime = value;
+    fadeInDurationValue.textContent = `${value}s`;
+    currentSettings.fadeInDuration = value;
     saveSettings(currentSettings);
 });
 

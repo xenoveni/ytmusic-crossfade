@@ -4,16 +4,23 @@
     <title>YouTube Music Crossfade</title>
     <style>
         body {
-            width: 320px;
-            padding: 16px;
+            width: 340px;
+            padding: 20px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            color: #333;
+            color: #f3f3f3;
+            background: #181a20;
+            border-radius: 18px;
+            box-shadow: 0 4px 32px rgba(0,0,0,0.25);
         }
 
         .container {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 20px;
+            background: #23242b;
+            border-radius: 16px;
+            padding: 18px 16px 16px 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.18);
         }
 
         .header {
@@ -24,73 +31,96 @@
         }
 
         .title {
-            font-size: 18px;
-            font-weight: 600;
+            font-size: 20px;
+            font-weight: 700;
             margin: 0;
+            color: #fff;
         }
 
         .status {
             font-size: 14px;
-            color: #666;
+            color: #a0a0b0;
         }
 
         .control-group {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
         }
 
         .label {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 14px;
+            font-size: 15px;
+            color: #e0e0e0;
         }
 
         .slider-container {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
         .slider {
             flex: 1;
-            height: 4px;
+            height: 6px;
             -webkit-appearance: none;
-            background: #ddd;
-            border-radius: 2px;
+            -moz-appearance: none;
+            appearance: none;
+            background: #292b33;
+            border-radius: 6px;
             outline: none;
+            transition: background 0.2s;
         }
-
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             background: #1a73e8;
             border-radius: 50%;
             cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 8px rgba(26,115,232,0.15);
         }
-
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #1a73e8;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 8px rgba(26,115,232,0.15);
+        }
+        .slider::-ms-thumb {
+            width: 18px;
+            height: 18px;
+            background: #1a73e8;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 8px rgba(26,115,232,0.15);
+        }
+        .slider:focus {
+            background: #31344a;
+        }
         .value {
             min-width: 40px;
             text-align: right;
-            font-size: 14px;
-            color: #666;
+            font-size: 15px;
+            color: #b0b0c0;
         }
-
         .toggle {
             position: relative;
             display: inline-block;
             width: 44px;
             height: 24px;
         }
-
         .toggle input {
             opacity: 0;
             width: 0;
             height: 0;
         }
-
         .slider-toggle {
             position: absolute;
             cursor: pointer;
@@ -98,11 +128,10 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: #35384a;
             transition: .4s;
             border-radius: 24px;
         }
-
         .slider-toggle:before {
             position: absolute;
             content: "";
@@ -110,42 +139,36 @@
             width: 18px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: #fff;
             transition: .4s;
             border-radius: 50%;
         }
-
         input:checked + .slider-toggle {
             background-color: #1a73e8;
         }
-
         input:checked + .slider-toggle:before {
             transform: translateX(20px);
         }
-
         .button {
             background: #1a73e8;
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 500;
             transition: background-color 0.2s;
         }
-
         .button:hover {
             background: #1557b0;
         }
-
         .button:disabled {
-            background: #ccc;
+            background: #444;
             cursor: not-allowed;
         }
-
         .error {
-            color: #d93025;
+            color: #ff6b6b;
             font-size: 14px;
             margin-top: 8px;
         }
@@ -170,21 +193,21 @@
 
         <div class="control-group">
             <div class="label">
-                <span>Fade Duration</span>
-                <span class="value" id="fadeDurationValue">15s</span>
+                <span>Fade Out Duration</span>
+                <span class="value" id="fadeOutDurationValue">15s</span>
             </div>
             <div class="slider-container">
-                <input type="range" class="slider" id="fadeDuration" min="5" max="30" value="15">
+                <input type="range" class="slider" id="fadeOutDuration" min="5" max="30" value="15">
             </div>
         </div>
 
         <div class="control-group">
             <div class="label">
-                <span>Trigger Time</span>
-                <span class="value" id="triggerTimeValue">15s</span>
+                <span>Fade In Duration</span>
+                <span class="value" id="fadeInDurationValue">15s</span>
             </div>
             <div class="slider-container">
-                <input type="range" class="slider" id="triggerTime" min="10" max="30" value="15">
+                <input type="range" class="slider" id="fadeInDuration" min="5" max="30" value="15">
             </div>
         </div>
 
