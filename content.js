@@ -71,7 +71,12 @@
     initialize() {
       // Wait for player elements to be available
       this.waitForElements().then(() => {
-        this.setupMessageListener();
+        if (chrome && chrome.runtime && chrome.runtime.onMessage) {
+          this.setupMessageListener();
+        } else {
+          console.error('YouTubeMusicController: chrome.runtime.onMessage is not available. Retrying in 1s...');
+          setTimeout(() => this.initialize(), 1000); // Retry initialization
+        }
       });
     }
 
