@@ -132,46 +132,83 @@ async function sendMessageToTab(tabId, message) {
 
 // Execute crossfade between tabs
 async function executeCrossfade(fromTab, toTab, duration) {
+    crossfadeActive = true;
     const startTime = Date.now();
-    const endTime = startTime + (duration * 1000);
     console.log('Starting crossfade from', fromTab, 'to', toTab, 'duration', duration);
-    // Start playing the next tab at 0 volume
     await sendMessageToTab(toTab, { action: 'setVolume', volume: 0 });
     await sendMessageToTab(toTab, { action: 'play' });
-    // Crossfade loop
     const crossfadeInterval = setInterval(async () => {
         const currentTime = Date.now();
         const progress = Math.min(1, (currentTime - startTime) / (duration * 1000));
         if (progress >= 1) {
             clearInterval(crossfadeInterval);
-            // Complete the crossfade
             await sendMessageToTab(fromTab, { action: 'setVolume', volume: 0 });
             await sendMessageToTab(toTab, { action: 'setVolume', volume: 100 });
-            await sendMessageToTab(fromTab, { action: 'pause' });
+
+            // Get original song title from fromTab
+            const originalInfoFromTab = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
+            const originalSongTitle = originalInfoFromTab ? originalInfoFromTab.songTitle : null;
+
+            console.log(`Crossfade: Advancing fromTab ${fromTab}. Original song: "${originalSongTitle}"`);
             await sendMessageToTab(fromTab, { action: 'next' });
-            console.log('Crossfade complete.');
+
+            let songChanged = false;
+            const maxAttempts = 20; // 20 attempts * 500ms = 10 seconds timeout
+            let attempts = 0;
+
+            while (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // Polling interval
+                const currentInfoFromTab = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
+                attempts++;
+
+                if (currentInfoFromTab && currentInfoFromTab.songTitle && originalSongTitle !== null && currentInfoFromTab.songTitle !== originalSongTitle) {
+                    console.log(`Crossfade: Song in fromTab ${fromTab} changed to "${currentInfoFromTab.songTitle}". Pausing.`);
+                    songChanged = true;
+                    break;
+                } else if (currentInfoFromTab && originalSongTitle === null && currentInfoFromTab.songTitle !== null) {
+                    // Case where original song title was null (e.g., tab just loaded, nothing playing)
+                    // and now something is playing (even if it's the "first" song after 'next')
+                    console.log(`Crossfade: Song in fromTab ${fromTab} appeared as "${currentInfoFromTab.songTitle}" (original was null). Pausing.`);
+                    songChanged = true;
+                    break;
+                } else if (currentInfoFromTab) {
+                    console.log(`Crossfade: Polling fromTab ${fromTab} (Attempt ${attempts}/${maxAttempts}): Song title still "${currentInfoFromTab.songTitle}" (Original: "${originalSongTitle}")`);
+                } else {
+                    console.log(`Crossfade: Polling fromTab ${fromTab} (Attempt ${attempts}/${maxAttempts}): Could not get info.`);
+                    // If info is null repeatedly, it might be an issue, but we continue polling for now
+                }
+            }
+
+            if (songChanged) {
+                await sendMessageToTab(fromTab, { action: 'pause' });
+                console.log(`Crossfade complete. Tab ${fromTab} advanced and paused. Tab ${toTab} is now leader.`);
+            } else {
+                console.warn(`Crossfade complete, but song in fromTab ${fromTab} did not change title after ${attempts} attempts (Original: "${originalSongTitle}"). Forcing pause.`);
+                await sendMessageToTab(fromTab, { action: 'pause' }); // Fallback: pause anyway
+            }
+
+            crossfadeActive = false;
+            // currentLeader will be updated by monitorPlayback based on actual play state
             return;
         }
-        // Linear crossfade
         const fromVolume = Math.round(100 * (1 - progress));
         const toVolume = Math.round(100 * progress);
-        // Only log crossfade step if it changes
-        const stepKey = `${fromTab}->${toTab}`;
-        const lastStep = lastCrossfadeStep[stepKey] || {};
-        const thisStep = { fromVolume, toVolume, progress: Math.round(progress * 100) / 100 };
-        if (JSON.stringify(thisStep) !== JSON.stringify(lastStep)) {
-          console.log('Crossfade step:', { fromTab, toTab, fromVolume, toVolume, progress: Math.round(progress * 100) / 100 });
-          lastCrossfadeStep[stepKey] = thisStep;
+        if (!crossfadeActive) { // Check if another crossfade has started or was stopped
+            clearInterval(crossfadeInterval);
+            return;
         }
         await sendMessageToTab(fromTab, { action: 'setVolume', volume: fromVolume });
         await sendMessageToTab(toTab, { action: 'setVolume', volume: toVolume });
-    }, 50); // Update every 50ms for smooth transition
+    }, 50);
 }
 
 // Monitor playback and trigger crossfades
 async function monitorPlayback() {
-    if (!settings.isEnabled || !activeTab1 || !activeTab2) return;
-    // Validate both tabs before proceeding
+    if (!settings.isEnabled || crossfadeActive) return; // Don't monitor if disabled or crossfade is in progress
+    if (!activeTab1 || !activeTab2) {
+        await initializeTabs();
+        return;
+    }
     const valid1 = await isTabValid(activeTab1);
     const valid2 = await isTabValid(activeTab2);
     if (!valid1 || !valid2) {
@@ -179,42 +216,52 @@ async function monitorPlayback() {
         await initializeTabs();
         return;
     }
-    // Always check both tabs' playback info
-    const info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' });
-    const info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' });
+    let info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' });
+    let info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' });
     if (!info1 || !info2) return;
-    // Determine which tab is currently playing
+
+    // If both are playing, pause the one that *was* the current leader
+    // (This handles the state right after a crossfade or manual double play)
+    if (info1.isPlaying && info2.isPlaying) {
+        console.log('Both tabs playing. Current (previous) leader was', currentLeader, '. Attempting to pause this previous leader.');
+        if (currentLeader === 1) { // Tab 1 was the leader that should have faded out
+            console.log('Pausing tab 1 as it was the previous leader.');
+            await sendMessageToTab(activeTab1, { action: 'pause' });
+            info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' }); // Re-fetch info
+        } else { // Tab 2 was the leader that should have faded out (currentLeader === 2)
+            console.log('Pausing tab 2 as it was the previous leader.');
+            await sendMessageToTab(activeTab2, { action: 'pause' });
+            info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' }); // Re-fetch info
+        }
+        if (!info1 || !info2) return; // Check again after attempting pause
+    }
+
     let playingTab = null, pausedTab = null, playingInfo = null, pausedInfo = null;
+
     if (info1.isPlaying && !info2.isPlaying) {
         playingTab = activeTab1;
         pausedTab = activeTab2;
         playingInfo = info1;
         pausedInfo = info2;
-        currentLeader = 1;
+        currentLeader = 1; // Update leader
     } else if (info2.isPlaying && !info1.isPlaying) {
         playingTab = activeTab2;
         pausedTab = activeTab1;
         playingInfo = info2;
         pausedInfo = info1;
-        currentLeader = 2;
+        currentLeader = 2; // Update leader
     } else {
-        // If both are playing or both are paused, do nothing
-        console.log('No crossfade: both tabs are playing or both are paused. info1:', info1, 'info2:', info2);
-        return;
+        console.log('No single playing tab detected after attempting to resolve dual play. info1:', info1, 'info2:', info2);
+        return; // Neither or both still playing (or both paused)
     }
-    // Only trigger crossfade if the playing tab is near the end and the other is paused
+
     const timeUntilEnd = playingInfo.duration - playingInfo.currentTime;
-    if (typeof monitorPlayback.lastTimeUntilEnd === 'undefined' || monitorPlayback.lastTimeUntilEnd !== timeUntilEnd) {
-      console.log('Time until end:', timeUntilEnd, 'Trigger time:', settings.triggerTime);
-      monitorPlayback.lastTimeUntilEnd = timeUntilEnd;
-    }
     if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && !pausedInfo.isPlaying) {
         console.log('Triggering crossfade from', playingTab, 'to', pausedTab, 'at', timeUntilEnd, 'seconds left');
         await executeCrossfade(playingTab, pausedTab, settings.fadeDuration);
-        // currentLeader will be updated on next tick based on which tab is playing
     } else {
         if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && pausedInfo.isPlaying) {
-            console.log('Crossfade skipped: other tab is already playing.');
+             console.log('Crossfade skipped: other tab is already playing (this shouldn\'t happen with new logic).');
         }
     }
 }
