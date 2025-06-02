@@ -37,6 +37,28 @@
   }
   waitForPlayerAndInit();
 
+  // Helper to robustly find the <audio> element in YouTube Music (handles shadow DOM)
+  function getYtmusicAudio() {
+    // Try direct
+    let audio = document.querySelector('audio');
+    if (audio) return audio;
+    // Try inside ytmusic-player-bar shadow root
+    const playerBar = document.querySelector('ytmusic-player-bar');
+    if (playerBar && playerBar.shadowRoot) {
+      audio = playerBar.shadowRoot.querySelector('audio');
+      if (audio) return audio;
+    }
+    // Try inside any shadow root on the page
+    const allElems = document.querySelectorAll('*');
+    for (const el of allElems) {
+      if (el.shadowRoot) {
+        audio = el.shadowRoot.querySelector('audio');
+        if (audio) return audio;
+      }
+    }
+    return null;
+  }
+
   // YouTube Music player control functions
   class YouTubeMusicController {
     constructor() {
@@ -145,19 +167,43 @@
           currentTime: 0,
           duration: 0,
           isPlaying: false,
-          songTitle: 'Unknown'
+          songTitle: songTitle || 'Unknown'
         };
       }
-      // Parse time display (e.g. "1:23 / 3:45")
       const [currentTime, duration] = timeDisplay.textContent.split(' / ').map(time => {
         if (!time) return 0;
         const [minutes, seconds] = time.trim().split(':').map(Number);
         return (minutes || 0) * 60 + (seconds || 0);
       });
+
+      let isPlaying = false;
+      const playPauseIconButton = document.querySelector('ytmusic-player-bar yt-icon-button.play-pause-button');
+
+      if (playPauseIconButton) {
+        const title = playPauseIconButton.getAttribute('title') || '';
+        console.log('Play/Pause IconButton found. Title:', title);
+        isPlaying = title.toLowerCase().includes('pause');
+
+        // Fallback: If title on yt-icon-button doesn't confirm, check aria-label of inner button
+        if (!isPlaying) {
+            const innerButton = playPauseIconButton.querySelector('button#button'); // Standard inner button often has id="button"
+            if (innerButton) {
+                const ariaLabel = innerButton.getAttribute('aria-label') || '';
+                console.log('Inner button (#button) found. Aria-label:', ariaLabel);
+                isPlaying = ariaLabel.toLowerCase().includes('pause');
+            } else {
+                console.log('Inner button (#button) not found inside yt-icon-button.');
+            }
+        }
+      } else {
+        console.log('Play/Pause IconButton (ytmusic-player-bar yt-icon-button.play-pause-button) NOT found.');
+      }
+      console.log('Final isPlaying state for this tab:', isPlaying);
+
       return {
         currentTime,
         duration,
-        isPlaying: this.playButton?.getAttribute('title')?.includes('Pause') || this.playButton?.getAttribute('aria-label')?.includes('Pause'),
+        isPlaying,
         songTitle: songTitle || 'Unknown'
       };
     }

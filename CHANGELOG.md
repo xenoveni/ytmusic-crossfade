@@ -8,10 +8,12 @@
 - Improved slider styling and accessibility for dark mode.
 
 ### Functionality
+- **Robust Playback Detection**: Implemented multi-step logic to accurately detect `isPlaying` state by checking the `title` of `<ytmusic-player-bar yt-icon-button.play-pause-button>` and, as a fallback, the `aria-label` of an inner `<button#button>`. This resolves issues where playback state was incorrectly reported as `false`.
 - Robust selector updates for all YouTube Music player elements (play/pause, volume, time, progress bar, song title) to match the June 2025 DOM.
 - Song title extraction now uses the correct selector for the currently playing track, ensuring accurate display and crossfade logic.
 - Added fallback and logging for progress bar detection.
 - Improved content script initialization and error handling for SPA navigation and dynamic DOM changes.
+- Dynamic Leader Tab: The extension now dynamically detects which tab is actively playing and sets it as the leader for crossfading, improving responsiveness to user actions.
 
 ### Settings & State
 - Settings and popup logic updated to use new fade in/out duration options.
@@ -45,11 +47,11 @@
 
 ### 6. Repeated/Spammy Logs
 - **Error:** Console was spammed with repeated logs for tab detection and assignment.
-- **Fix:** (Planned) Add throttling or state-change-only logging to reduce log spam.
+- **Fix:** Added logic to only log when state changes (e.g., active tabs, playback info), greatly reducing log spam and making debugging easier.
 
-### 7. Playback Info Still Null / No Crossfade
-- **Error:** Even with valid tabs, playback info was `null` and crossfade did not trigger.
-- **Fix:** (Planned) Ensure content script is always initialized and ready, and that messaging is robust.
+### 7. Playback Info Still Null / No Crossfade / Incorrect isPlaying
+- **Error:** Even with valid tabs, playback info was `null`, crossfade did not trigger, or `isPlaying` state was incorrect.
+- **Fix:** Iteratively improved selector logic for all player elements. Final fix uses a multi-step check of the play/pause button's `title` and `aria-label` for robust `isPlaying` detection.
 
 ### 8. Content Script Not Initializing Controller in SPA/All Frames
 - **Error:** Content script loaded but controller not initialized; no message listener, no crossfade.
@@ -58,6 +60,10 @@
   - Improved waitForElements to log all selector results on every attempt.
   - Added a fallback controller initialization after 3 seconds to ensure the controller is always set up.
   - Updated manifest.json to use `"all_frames": true` and `"run_at": "document_idle"` for robust SPA support.
+
+### 9. Crossfade Not Triggering After Dynamic Tab Switching
+- **Error:** If user manually paused one tab and played another, the crossfade logic would stall.
+- **Fix:** Updated `monitorPlayback` in `background.js` to always check both tabs and dynamically set the `currentLeader` to the tab that is actively playing. Crossfade now correctly triggers from the user-selected playing tab.
 
 ---
 

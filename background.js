@@ -179,22 +179,43 @@ async function monitorPlayback() {
         await initializeTabs();
         return;
     }
-    const currentTab = currentLeader === 1 ? activeTab1 : activeTab2;
-    const nextTab = currentLeader === 1 ? activeTab2 : activeTab1;
-    // Only log checking playback info if tab changes
-    // console.log('Checking playback info for tab', currentTab);
-    const playbackInfo = await sendMessageToTab(currentTab, { action: 'getPlaybackInfo' });
-    if (!playbackInfo) return;
-    const timeUntilEnd = playbackInfo.duration - playbackInfo.currentTime;
-    // Only log time until end if it changes
+    // Always check both tabs' playback info
+    const info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' });
+    const info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' });
+    if (!info1 || !info2) return;
+    // Determine which tab is currently playing
+    let playingTab = null, pausedTab = null, playingInfo = null, pausedInfo = null;
+    if (info1.isPlaying && !info2.isPlaying) {
+        playingTab = activeTab1;
+        pausedTab = activeTab2;
+        playingInfo = info1;
+        pausedInfo = info2;
+        currentLeader = 1;
+    } else if (info2.isPlaying && !info1.isPlaying) {
+        playingTab = activeTab2;
+        pausedTab = activeTab1;
+        playingInfo = info2;
+        pausedInfo = info1;
+        currentLeader = 2;
+    } else {
+        // If both are playing or both are paused, do nothing
+        console.log('No crossfade: both tabs are playing or both are paused. info1:', info1, 'info2:', info2);
+        return;
+    }
+    // Only trigger crossfade if the playing tab is near the end and the other is paused
+    const timeUntilEnd = playingInfo.duration - playingInfo.currentTime;
     if (typeof monitorPlayback.lastTimeUntilEnd === 'undefined' || monitorPlayback.lastTimeUntilEnd !== timeUntilEnd) {
       console.log('Time until end:', timeUntilEnd, 'Trigger time:', settings.triggerTime);
       monitorPlayback.lastTimeUntilEnd = timeUntilEnd;
     }
-    if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0) {
-        // Start crossfade
-        await executeCrossfade(currentTab, nextTab, settings.fadeDuration);
-        currentLeader = currentLeader === 1 ? 2 : 1;
+    if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && !pausedInfo.isPlaying) {
+        console.log('Triggering crossfade from', playingTab, 'to', pausedTab, 'at', timeUntilEnd, 'seconds left');
+        await executeCrossfade(playingTab, pausedTab, settings.fadeDuration);
+        // currentLeader will be updated on next tick based on which tab is playing
+    } else {
+        if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && pausedInfo.isPlaying) {
+            console.log('Crossfade skipped: other tab is already playing.');
+        }
     }
 }
 
