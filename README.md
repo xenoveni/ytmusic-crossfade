@@ -1,4 +1,4 @@
-# YouTube Music Crossfade Google Chrome Extension (Still in Development)
+# YouTube Music Crossfade Google Chrome Extension
 
 A modern Chrome extension for seamless, professional crossfading between two YouTube Music tabs. Enjoy DJ-style transitions, smart timing, and a beautiful dark-themed UI.
 
