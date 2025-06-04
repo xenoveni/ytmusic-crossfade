@@ -4,68 +4,38 @@ let activeTab2 = null;
 let crossfadeActive = false;
 let currentLeader = 1;
 let settings = {
-    fadeDuration: 15, // seconds
-    triggerTime: 15, // seconds before end
+    fadeOutDuration: 15, // seconds
+    fadeInDuration: 15, // seconds
     isEnabled: false
 };
 
-// --- State tracking for log-on-change ---
-let lastActiveTabs = [];
-let lastPlaybackInfo = {};
-let lastCrossfadeStep = {};
-
-function arraysEqual(a, b) {
-  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
-}
-
-function logIfChanged(label, value, lastValueRef) {
-  const valueStr = JSON.stringify(value);
-  if (lastValueRef.current !== valueStr) {
-    console.log(label, value);
-    lastValueRef.current = valueStr;
-  }
-}
-
 // Load settings from storage
-chrome.storage.sync.get(['fadeDuration', 'triggerTime', 'isEnabled'], (result) => {
+chrome.storage.sync.get(['fadeOutDuration', 'fadeInDuration', 'isEnabled'], (result) => {
     settings = { ...settings, ...result };
-    console.log('Loaded settings:', settings);
 });
 
 // Save settings to storage
 function saveSettings() {
     chrome.storage.sync.set(settings);
-    console.log('Saved settings:', settings);
 }
 
 // Find valid YouTube Music tabs (not discarded, correct URL)
 async function findYouTubeMusicTabs() {
     const tabs = await chrome.tabs.query({});
     // Only keep valid YouTube Music tabs
-    const validTabs = tabs.filter(tab => tab.url && tab.url.startsWith('https://music.youtube.com/') && !tab.discarded && tab.status === 'complete');
-    // Only log all open tabs and detected tabs if they change
-    if (!arraysEqual(validTabs.map(tab => tab.id), lastActiveTabs)) {
-      console.log('Detected valid YouTube Music tabs:', validTabs.map(tab => ({id: tab.id, url: tab.url, status: tab.status, discarded: tab.discarded})));
-      lastActiveTabs = validTabs.map(tab => tab.id);
-    }
-    return validTabs;
+    return tabs.filter(tab => tab.url && tab.url.startsWith('https://music.youtube.com/') && !tab.discarded && tab.status === 'complete');
 }
 
 // Initialize tabs with detailed logging
 async function initializeTabs() {
     const tabs = await findYouTubeMusicTabs();
     if (tabs.length >= 2) {
-        const newActiveTabs = [tabs[0].id, tabs[1].id];
-        if (!arraysEqual(newActiveTabs, [activeTab1, activeTab2])) {
-          console.log('Active tabs set:', newActiveTabs[0], newActiveTabs[1]);
-        }
-        activeTab1 = newActiveTabs[0];
-        activeTab2 = newActiveTabs[1];
+        activeTab1 = tabs[0].id;
+        activeTab2 = tabs[1].id;
         return true;
     }
     activeTab1 = null;
     activeTab2 = null;
-    console.warn('Not enough valid YouTube Music tabs found. Tabs:', tabs);
     return false;
 }
 
@@ -87,15 +57,14 @@ async function ensureContentScript(tabId, url) {
         target: { tabId },
         files: ['content.js'],
       });
-      console.log('Ensured content script in tab', tabId);
     }
   } catch (e) {
-    console.warn('Could not ensure content script in tab', tabId, e);
+    // Silent fail - tab might not be accessible
   }
 }
 
-// Robust sendMessageToTab: always check and inject if needed
-async function sendMessageToTab(tabId, message) {
+// Robust sendMessageToTab with retry mechanism
+async function sendMessageToTab(tabId, message, retries = 2) {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (
@@ -106,35 +75,43 @@ async function sendMessageToTab(tabId, message) {
       tab.status === 'complete'
     ) {
       await ensureContentScript(tabId, tab.url);
-      // Only log sending message if message/action changes
-      // (optional: can keep this always visible for debugging)
-      // console.log('Sending message to tab', tabId, message);
-      const response = await chrome.tabs.sendMessage(tabId, message);
-      // Only log response if it changes
-      if (message.action === 'getPlaybackInfo') {
-        const last = lastPlaybackInfo[tabId] || null;
-        if (JSON.stringify(response) !== JSON.stringify(last)) {
-          console.log('Playback info for tab', tabId, response);
-          lastPlaybackInfo[tabId] = response;
+      
+      try {
+        const response = await chrome.tabs.sendMessage(tabId, message);
+        return response;
+      } catch (error) {
+        // If we have retries left, wait a bit and try again
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return sendMessageToTab(tabId, message, retries - 1);
         }
+        throw error;
       }
-      return response;
     } else {
       await initializeTabs();
       return null;
     }
   } catch (error) {
-    console.error(`Error sending message to tab ${tabId}:`, error);
+    // Don't log errors to avoid cluttering the console
     await initializeTabs();
     return null;
   }
 }
 
+// Track the last song title for each tab to detect changes
+let lastSongTitles = {};
+
 // Execute crossfade between tabs
 async function executeCrossfade(fromTab, toTab, duration) {
     crossfadeActive = true;
     const startTime = Date.now();
-    console.log('Starting crossfade from', fromTab, 'to', toTab, 'duration', duration);
+    
+    // Store the current song title before starting crossfade
+    const fromTabInfo = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
+    if (fromTabInfo && fromTabInfo.songTitle) {
+        lastSongTitles[fromTab] = fromTabInfo.songTitle;
+    }
+    
     await sendMessageToTab(toTab, { action: 'setVolume', volume: 0 });
     await sendMessageToTab(toTab, { action: 'play' });
     const crossfadeInterval = setInterval(async () => {
@@ -146,46 +123,55 @@ async function executeCrossfade(fromTab, toTab, duration) {
             await sendMessageToTab(toTab, { action: 'setVolume', volume: 100 });
 
             // Get original song title from fromTab
-            const originalInfoFromTab = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
-            const originalSongTitle = originalInfoFromTab ? originalInfoFromTab.songTitle : null;
-
-            console.log(`Crossfade: Advancing fromTab ${fromTab}. Original song: "${originalSongTitle}"`);
-            await sendMessageToTab(fromTab, { action: 'next' });
-
-            let songChanged = false;
-            const maxAttempts = 20; // 20 attempts * 500ms = 10 seconds timeout
-            let attempts = 0;
-
-            while (attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // Polling interval
-                const currentInfoFromTab = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
-                attempts++;
-
-                if (currentInfoFromTab && currentInfoFromTab.songTitle && originalSongTitle !== null && currentInfoFromTab.songTitle !== originalSongTitle) {
-                    console.log(`Crossfade: Song in fromTab ${fromTab} changed to "${currentInfoFromTab.songTitle}". Pausing.`);
-                    songChanged = true;
-                    break;
-                } else if (currentInfoFromTab && originalSongTitle === null && currentInfoFromTab.songTitle !== null) {
-                    // Case where original song title was null (e.g., tab just loaded, nothing playing)
-                    // and now something is playing (even if it's the "first" song after 'next')
-                    console.log(`Crossfade: Song in fromTab ${fromTab} appeared as "${currentInfoFromTab.songTitle}" (original was null). Pausing.`);
-                    songChanged = true;
-                    break;
-                } else if (currentInfoFromTab) {
-                    console.log(`Crossfade: Polling fromTab ${fromTab} (Attempt ${attempts}/${maxAttempts}): Song title still "${currentInfoFromTab.songTitle}" (Original: "${originalSongTitle}")`);
-                } else {
-                    console.log(`Crossfade: Polling fromTab ${fromTab} (Attempt ${attempts}/${maxAttempts}): Could not get info.`);
-                    // If info is null repeatedly, it might be an issue, but we continue polling for now
+            const originalSongTitle = lastSongTitles[fromTab] || null;
+            
+            // Set up a monitoring interval to detect when the song changes automatically
+            let songChangeDetectionInterval;
+            let detectionAttempts = 0;
+            const maxDetectionAttempts = 30; // 15 seconds max (500ms * 30)
+            
+            songChangeDetectionInterval = setInterval(async () => {
+                try {
+                    detectionAttempts++;
+                    const currentInfoFromTab = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
+                    
+                    // Check if song has changed
+                    if (currentInfoFromTab && currentInfoFromTab.songTitle && 
+                        originalSongTitle !== null && 
+                        currentInfoFromTab.songTitle !== originalSongTitle) {
+                        
+                        clearInterval(songChangeDetectionInterval);
+                        
+                        // Pause the tab now that the song has changed automatically
+                        await sendMessageToTab(fromTab, { action: 'pause' });
+                        lastSongTitles[fromTab] = currentInfoFromTab.songTitle;
+                        
+                        // Double-check that pause worked
+                        setTimeout(async () => {
+                            const verifyInfo = await sendMessageToTab(fromTab, { action: 'getPlaybackInfo' });
+                            if (verifyInfo && verifyInfo.isPlaying) {
+                                await sendMessageToTab(fromTab, { action: 'pause' });
+                            }
+                        }, 1000);
+                    } 
+                    // If both tabs are playing, force pause the fromTab
+                    else if (currentInfoFromTab && currentInfoFromTab.isPlaying) {
+                        const toTabInfo = await sendMessageToTab(toTab, { action: 'getPlaybackInfo' });
+                        if (toTabInfo && toTabInfo.isPlaying) {
+                            await sendMessageToTab(fromTab, { action: 'pause' });
+                            clearInterval(songChangeDetectionInterval);
+                        }
+                    }
+                    
+                    // Give up after max attempts and force pause
+                    if (detectionAttempts >= maxDetectionAttempts) {
+                        await sendMessageToTab(fromTab, { action: 'pause' });
+                        clearInterval(songChangeDetectionInterval);
+                    }
+                } catch (error) {
+                    // Silent fail - continue detection
                 }
-            }
-
-            if (songChanged) {
-                await sendMessageToTab(fromTab, { action: 'pause' });
-                console.log(`Crossfade complete. Tab ${fromTab} advanced and paused. Tab ${toTab} is now leader.`);
-            } else {
-                console.warn(`Crossfade complete, but song in fromTab ${fromTab} did not change title after ${attempts} attempts (Original: "${originalSongTitle}"). Forcing pause.`);
-                await sendMessageToTab(fromTab, { action: 'pause' }); // Fallback: pause anyway
-            }
+            }, 500); // Check every 500ms
 
             crossfadeActive = false;
             // currentLeader will be updated by monitorPlayback based on actual play state
@@ -212,57 +198,52 @@ async function monitorPlayback() {
     const valid1 = await isTabValid(activeTab1);
     const valid2 = await isTabValid(activeTab2);
     if (!valid1 || !valid2) {
-        console.warn('One or both active tabs are invalid. Reinitializing tabs.');
         await initializeTabs();
         return;
     }
-    let info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' });
-    let info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' });
-    if (!info1 || !info2) return;
+    
+    try {
+        let info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' });
+        let info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' });
+        if (!info1 || !info2) return;
 
-    // If both are playing, pause the one that *was* the current leader
-    // (This handles the state right after a crossfade or manual double play)
-    if (info1.isPlaying && info2.isPlaying) {
-        console.log('Both tabs playing. Current (previous) leader was', currentLeader, '. Attempting to pause this previous leader.');
-        if (currentLeader === 1) { // Tab 1 was the leader that should have faded out
-            console.log('Pausing tab 1 as it was the previous leader.');
-            await sendMessageToTab(activeTab1, { action: 'pause' });
-            info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' }); // Re-fetch info
-        } else { // Tab 2 was the leader that should have faded out (currentLeader === 2)
-            console.log('Pausing tab 2 as it was the previous leader.');
-            await sendMessageToTab(activeTab2, { action: 'pause' });
-            info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' }); // Re-fetch info
+        // If both are playing, pause the one that *was* the current leader
+        // (This handles the state right after a crossfade or manual double play)
+        if (info1.isPlaying && info2.isPlaying) {
+            if (currentLeader === 1) { // Tab 1 was the leader that should have faded out
+                await sendMessageToTab(activeTab1, { action: 'pause' });
+                info1 = await sendMessageToTab(activeTab1, { action: 'getPlaybackInfo' }); // Re-fetch info
+            } else { // Tab 2 was the leader that should have faded out (currentLeader === 2)
+                await sendMessageToTab(activeTab2, { action: 'pause' });
+                info2 = await sendMessageToTab(activeTab2, { action: 'getPlaybackInfo' }); // Re-fetch info
+            }
+            if (!info1 || !info2) return; // Check again after attempting pause
         }
-        if (!info1 || !info2) return; // Check again after attempting pause
-    }
 
-    let playingTab = null, pausedTab = null, playingInfo = null, pausedInfo = null;
+        let playingTab = null, pausedTab = null, playingInfo = null, pausedInfo = null;
 
-    if (info1.isPlaying && !info2.isPlaying) {
-        playingTab = activeTab1;
-        pausedTab = activeTab2;
-        playingInfo = info1;
-        pausedInfo = info2;
-        currentLeader = 1; // Update leader
-    } else if (info2.isPlaying && !info1.isPlaying) {
-        playingTab = activeTab2;
-        pausedTab = activeTab1;
-        playingInfo = info2;
-        pausedInfo = info1;
-        currentLeader = 2; // Update leader
-    } else {
-        console.log('No single playing tab detected after attempting to resolve dual play. info1:', info1, 'info2:', info2);
-        return; // Neither or both still playing (or both paused)
-    }
-
-    const timeUntilEnd = playingInfo.duration - playingInfo.currentTime;
-    if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && !pausedInfo.isPlaying) {
-        console.log('Triggering crossfade from', playingTab, 'to', pausedTab, 'at', timeUntilEnd, 'seconds left');
-        await executeCrossfade(playingTab, pausedTab, settings.fadeDuration);
-    } else {
-        if (timeUntilEnd <= settings.triggerTime && timeUntilEnd > 0 && pausedInfo.isPlaying) {
-             console.log('Crossfade skipped: other tab is already playing (this shouldn\'t happen with new logic).');
+        if (info1.isPlaying && !info2.isPlaying) {
+            playingTab = activeTab1;
+            pausedTab = activeTab2;
+            playingInfo = info1;
+            pausedInfo = info2;
+            currentLeader = 1; // Update leader
+        } else if (info2.isPlaying && !info1.isPlaying) {
+            playingTab = activeTab2;
+            pausedTab = activeTab1;
+            playingInfo = info2;
+            pausedInfo = info1;
+            currentLeader = 2; // Update leader
+        } else {
+            return; // Neither or both still playing (or both paused)
         }
+
+        const timeUntilEnd = playingInfo.duration - playingInfo.currentTime;
+        if (timeUntilEnd <= settings.fadeOutDuration && timeUntilEnd > 0 && !pausedInfo.isPlaying) {
+            await executeCrossfade(playingTab, pausedTab, settings.fadeInDuration);
+        }
+    } catch (error) {
+        // Silent fail - will retry on next interval
     }
 }
 
@@ -271,7 +252,6 @@ setInterval(monitorPlayback, 1000);
 
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Background received message:', request);
     switch (request.action) {
         case 'getStatus':
             sendResponse({
@@ -339,10 +319,9 @@ chrome.runtime.onInstalled.addListener(async () => {
           target: { tabId: tab.id },
           files: ['content.js'],
         });
-        console.log('Injected content script into tab', tab.id);
       } catch (e) {
-        console.warn('Could not inject into tab', tab.id, e);
+        // Silent fail - tab might not be accessible
       }
     }
   }
-}); 
+});
