@@ -56,7 +56,6 @@ async function saveSettings(settings) {
             settings
         });
     } catch (error) {
-        console.error('Error saving settings:', error);
         showError('Failed to save settings');
     }
 }
@@ -73,8 +72,7 @@ async function initializePopup() {
         }
         updateSettingsDisplay(status.settings);
     } catch (error) {
-        console.error('Error initializing popup:', error);
-        showError('Failed to initialize');
+        showError('Failed to initialize. Please refresh YouTube Music tabs.');
     }
 }
 
@@ -88,7 +86,6 @@ enableToggle.addEventListener('change', async (e) => {
         currentSettings.isEnabled = isEnabled;
         updateStatus({ ...currentSettings, activeTab1: true, activeTab2: true });
     } catch (error) {
-        console.error('Error toggling crossfade:', error);
         showError('Failed to toggle crossfade');
         e.target.checked = !isEnabled; // Revert toggle
     }
@@ -109,4 +106,4 @@ fadeInDurationSlider.addEventListener('input', (e) => {
 });
 
 // Initialize when popup opens
-document.addEventListener('DOMContentLoaded', initializePopup); 
+document.addEventListener('DOMContentLoaded', initializePopup);
